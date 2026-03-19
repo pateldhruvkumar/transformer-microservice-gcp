@@ -1,7 +1,8 @@
 # Shakespeare Text Generator — REST API
 
-A FastAPI microservice wrapping a PyTorch Transformer language model trained on
-the Tiny Shakespeare dataset. Deployed to Google Cloud Run.
+A FastAPI microservice that serves a PyTorch Transformer language model trained on the
+Tiny Shakespeare dataset (~1.1 MB of Shakespeare's plays). Supports greedy, balanced,
+and creative text generation via a simple REST API. Deployed on Google Cloud Run.
 
 ---
 
@@ -9,125 +10,143 @@ the Tiny Shakespeare dataset. Deployed to Google Cloud Run.
 
 ```
 shakespeare-api/
-├── app.py            # FastAPI app — routes, startup, request/response schemas
-├── model.py          # TransformerModel, Vocab, tokenizer, generate()
-├── requirements.txt  # Pinned dependencies (CPU-only torch)
-├── Dockerfile        # Container for Cloud Run
-├── best_model.pt     # ← YOU ADD THIS (exported from Assignment 4 notebook)
-├── vocab.json        # ← YOU ADD THIS (exported from Assignment 4 notebook)
-└── hyperparams.json  # ← YOU ADD THIS (optional but recommended)
+├── app/
+│   ├── main.py       # FastAPI factory, startup, CORS
+│   ├── routes.py     # GET /, GET /health, POST /generate
+│   ├── schemas.py    # Request / response Pydantic models
+│   ├── model.py      # TransformerModel, Vocab, generate()
+│   └── state.py      # Loaded model + vocab singleton
+├── artifacts/        # Model weights & vocab (not committed to git)
+│   ├── best_model.pt
+│   ├── vocab.json
+│   └── hyperparams.json
+├── scripts/
+│   └── export_artifacts.py   # Re-trains and saves artifacts
+├── Dockerfile
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
-## Step 1 — Export model artifacts from your notebook
+## Prerequisites
 
-Add a new cell at the end of your Assignment 4 notebook and run it:
-
-```python
-import json, torch
-
-# 1. Save model weights (must still have `model` in scope)
-torch.save(model.state_dict(), "best_model.pt")
-print("Saved best_model.pt")
-
-# 2. Save vocabulary
-vocab_data = {
-    "itos": vocab.get_itos(),
-    "stoi": vocab.stoi,
-    "default_index": vocab.default_index,
-}
-with open("vocab.json", "w") as f:
-    json.dump(vocab_data, f)
-print(f"Saved vocab.json ({len(vocab)} tokens)")
-
-# 3. Save hyperparameters
-hp = {
-    "emsize": emsize,     # 200
-    "d_hid": d_hid,       # 200
-    "nlayers": nlayers,   # 2
-    "nhead": nhead,        # 2
-    "dropout": dropout,   # 0.3
-}
-with open("hyperparams.json", "w") as f:
-    json.dump(hp, f)
-print("Saved hyperparams.json")
-```
-
-Move the three generated files into `shakespeare-api/`:
-
-```bash
-mv best_model.pt vocab.json hyperparams.json shakespeare-api/
-```
+- Python 3.11+
+- [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) (for deployment only)
 
 ---
 
-## Step 2 — Run locally
+## Step 1 — Generate model artifacts
+
+The model weights and vocabulary are not committed to git. Run the export script to
+train the model and save the artifacts:
 
 ```bash
 cd shakespeare-api
-
-# Create and activate a virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Start the server
-uvicorn app:app --reload --port 8080
+pip install torch requests       # minimal deps for training
+python scripts/export_artifacts.py
 ```
 
-The API will be available at `http://localhost:8080`.
-Interactive docs: `http://localhost:8080/docs`
+This downloads Tiny Shakespeare, trains for 10 epochs (~2.5 min on Apple Silicon),
+and writes three files to `artifacts/`:
+
+| File | Size | Description |
+|---|---|---|
+| `best_model.pt` | ~22 MB | Trained weights (best validation loss) |
+| `vocab.json` | ~293 KB | 10,926-token vocabulary |
+| `hyperparams.json` | <1 KB | Model architecture config |
 
 ---
 
-## Step 3 — Test locally with curl
+## Step 2 — Install dependencies & run locally
 
 ```bash
-# Health check
+cd shakespeare-api
+source .venv/bin/activate        # if not already active
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8080
+```
+
+The server starts at **http://localhost:8080**.
+Interactive API docs: **http://localhost:8080/docs**
+
+You should see this in the terminal on successful startup:
+
+```
+INFO: Vocabulary: 10926 tokens
+INFO: Model ready — 4865326 parameters
+INFO: Uvicorn running on http://127.0.0.1:8080
+```
+
+---
+
+## Step 3 — Test with curl
+
+**Health check**
+```bash
 curl http://localhost:8080/health
+```
+```json
+{"status": "healthy"}
+```
 
-# Service info
+**Service info**
+```bash
 curl http://localhost:8080/
+```
 
-# Generate text (balanced mode)
+**Generate — balanced** `(temperature=0.8, top_k=10)` — recommended default
+```bash
 curl -X POST http://localhost:8080/generate \
   -H "Content-Type: application/json" \
   -d '{"prompt": "to be or not to be", "max_tokens": 50, "temperature": 0.8, "top_k": 10}'
+```
 
-# Generate text (greedy)
+**Generate — greedy** `(temperature=1.0, top_k=0)` — deterministic, same output every time
+```bash
 curl -X POST http://localhost:8080/generate \
   -H "Content-Type: application/json" \
   -d '{"prompt": "the king shall", "max_tokens": 40, "temperature": 1.0, "top_k": 0}'
+```
 
-# Generate text (creative)
+**Generate — creative** `(temperature=1.3, top_k=20)` — more varied output
+```bash
 curl -X POST http://localhost:8080/generate \
   -H "Content-Type: application/json" \
   -d '{"prompt": "romeo , romeo , wherefore art thou", "max_tokens": 60, "temperature": 1.3, "top_k": 20}'
+```
+
+**Example response**
+```json
+{
+  "prompt": "to be or not to be",
+  "generated_text": "to be or not to be the king richard iii : and that is it ...",
+  "parameters": {
+    "max_tokens": 50,
+    "temperature": 0.8,
+    "top_k": 10
+  },
+  "tokens_generated": 50
+}
 ```
 
 ---
 
 ## Step 4 — Deploy to Google Cloud Run
 
-### Prerequisites
+### One-time setup
 
 ```bash
-# Authenticate
 gcloud auth login
-
-# Set your project (replace YOUR_PROJECT_ID)
 gcloud config set project YOUR_PROJECT_ID
-
-# Enable required APIs (one-time)
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com
 ```
 
 ### Deploy
 
-Run this from inside the `shakespeare-api/` directory:
+Run from inside the `shakespeare-api/` directory:
 
 ```bash
 gcloud run deploy shakespeare-api \
@@ -139,15 +158,13 @@ gcloud run deploy shakespeare-api \
   --platform managed
 ```
 
-Cloud Build will build the Docker image, push it to Artifact Registry, and deploy
-to Cloud Run. The command prints the live URL when it finishes.
+Cloud Build builds the Docker image and deploys it. The live URL is printed when
+the command completes.
 
-### Test the live deployment
-
-Replace `YOUR_URL` with the URL printed by the deploy command:
+### Test the live service
 
 ```bash
-export BASE_URL="https://YOUR_URL"
+export BASE_URL="https://YOUR-CLOUD-RUN-URL"
 
 curl $BASE_URL/health
 
@@ -167,39 +184,37 @@ gcloud run logs read shakespeare-api --region us-central1
 ## API reference
 
 ### `GET /`
-Returns service metadata.
+Returns service metadata and status.
 
 ### `GET /health`
-Returns `{"status": "healthy"}`. Used by Cloud Run health checks.
+Returns `{"status": "healthy"}`. Used by Cloud Run for health checks.
 
 ### `POST /generate`
 
-Request body:
+**Request body**
 
 | Field | Type | Default | Range | Description |
 |---|---|---|---|---|
-| `prompt` | string | required | ≥1 char | Seed text |
-| `max_tokens` | int | 50 | 1–200 | Tokens to generate |
-| `temperature` | float | 0.8 | 0.1–2.0 | Sampling temperature |
-| `top_k` | int | 10 | 0–50 | Top-k sampling (0 = greedy) |
+| `prompt` | string | required | ≥ 1 char | Seed text for generation |
+| `max_tokens` | int | `50` | 1 – 200 | Number of tokens to generate |
+| `temperature` | float | `0.8` | 0.1 – 2.0 | Lower = conservative, higher = creative |
+| `top_k` | int | `10` | 0 – 50 | Candidate pool size (`0` = greedy) |
 
-Response:
+**Generation modes**
 
-```json
-{
-  "prompt": "to be or not to be",
-  "generated_text": "to be or not to be , that is the question ...",
-  "parameters": {"max_tokens": 50, "temperature": 0.8, "top_k": 10},
-  "tokens_generated": 50
-}
-```
+| Mode | temperature | top_k | Behaviour |
+|---|---|---|---|
+| Greedy | `1.0` | `0` | Always picks highest-probability token — deterministic but repetitive |
+| Balanced | `0.8` | `10` | Samples from top 10 — coherent and varied |
+| Creative | `1.3` | `20` | Wider sampling — more surprising combinations |
 
 ---
 
 ## Notes
 
-- PyTorch runs on **CPU only** — no GPU needed on Cloud Run.
-- The model loads once at startup; all requests share the same loaded model.
-- Cloud Run scales to zero when idle, so the first request after a cold start
-  may take ~5–10 seconds as PyTorch initializes.
-- Memory: 1Gi is the minimum recommended (PyTorch + weights ≈ 500 MB).
+- **CPU only** — PyTorch runs on CPU inside the container. No GPU is needed on Cloud Run.
+- **Cold start** — Cloud Run scales to zero when idle. The first request after inactivity
+  takes ~5–10 seconds while the model loads (~22 MB weights + PyTorch init).
+- **Memory** — 1Gi is the minimum; PyTorch + model weights use ~500 MB at runtime.
+- **Greedy repetition** — Greedy decoding is known to produce loops ("and i have heard...
+  and i have heard..."). Use balanced or creative mode for better-looking output.
