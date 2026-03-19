@@ -1,0 +1,17 @@
+.gcloudignore
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+*.ipynb
+node_modules
+.venv
+venv
+env
+README.md
+*.md
+.pytest_cache
+.mypy_cache

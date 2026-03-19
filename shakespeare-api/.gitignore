@@ -1,0 +1,20 @@
+# Model artifacts (large binary / generated files — not committed)
+artifacts/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.env.*
+
+# Editor
+.DS_Store
