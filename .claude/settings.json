@@ -5,7 +5,12 @@
       "Bash(gcloud billing:*)",
       "Bash(gcloud services:*)",
       "Bash(PROJECT_NUMBER=925816807412 PROJECT_ID=gen-lang-client-0290089393 SA=\"$PROJECT_NUMBER-compute@developer.gserviceaccount.com\" __NEW_LINE_98c6be735102cf9a__ for role in roles/logging.logWriter roles/storage.objectAdmin roles/artifactregistry.writer roles/run.admin)",
-      "Bash(do gcloud:*)"
+      "Bash(do gcloud:*)",
+      "Bash(pip3 install:*)",
+      "Bash(pip3 show:*)",
+      "Bash(python3 scripts/generate_guide_pdf.py)",
+      "Bash(open Shakespeare_Text_Generator_Guide.pdf)",
+      "Bash(open Shakespeare_Text_Generator_Guide.docx)"
     ]
   }
 }
