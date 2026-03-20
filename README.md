@@ -9,22 +9,29 @@ and creative text generation via a simple REST API. Deployed on Google Cloud Run
 ## Project structure
 
 ```
-shakespeare-api/
-├── app/
-│   ├── main.py       # FastAPI factory, startup, CORS
-│   ├── routes.py     # GET /, GET /health, POST /generate
-│   ├── schemas.py    # Request / response Pydantic models
-│   ├── model.py      # TransformerModel, Vocab, generate()
-│   └── state.py      # Loaded model + vocab singleton
-├── artifacts/        # Model weights & vocab (not committed to git)
-│   ├── best_model.pt
-│   ├── vocab.json
-│   └── hyperparams.json
-├── scripts/
-│   └── export_artifacts.py   # Re-trains and saves artifacts
-├── Dockerfile
-├── requirements.txt
-└── README.md
+transformer-microservice-gcp/
+├── README.md
+├── CLAUDE.md
+├── .gitignore
+├── notebooks/
+│   └── Dhruvkumar_Patel_Assignment_4.ipynb   # Training reference (Assignment 4)
+└── shakespeare-api/
+    ├── app/
+    │   ├── main.py       # FastAPI factory, lifespan, CORS
+    │   ├── routes.py     # GET /, GET /health, POST /generate
+    │   ├── schemas.py    # Pydantic request / response models
+    │   ├── model.py      # TransformerModel, Vocab, generate()
+    │   └── state.py      # Loaded model + vocab singleton
+    ├── artifacts/        # Not committed — regenerate with export_artifacts.py
+    │   ├── best_model.pt
+    │   ├── vocab.json
+    │   └── hyperparams.json
+    ├── scripts/
+    │   └── export_artifacts.py   # Downloads data, trains, saves artifacts
+    ├── Dockerfile
+    ├── requirements.txt
+    ├── .dockerignore
+    └── .gcloudignore
 ```
 
 ---
