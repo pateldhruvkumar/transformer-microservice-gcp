@@ -1,8 +1,11 @@
-# Shakespeare Text Generator — REST API
+# Shakespeare Text Generator
 
-A FastAPI microservice that serves a PyTorch Transformer language model trained on the
+A FastAPI microservice wrapping a PyTorch Transformer language model trained on the
 Tiny Shakespeare dataset (~1.1 MB of Shakespeare's plays). Supports greedy, balanced,
-and creative text generation via a simple REST API. Deployed on Google Cloud Run.
+and creative text generation via a REST API and a built-in web UI. Deployed on Google Cloud Run.
+
+**Live service:** https://shakespeare-api-925816807412.us-central1.run.app
+**Web UI:** https://shakespeare-api-925816807412.us-central1.run.app/ui
 
 ---
 
@@ -13,12 +16,15 @@ transformer-microservice-gcp/
 ├── README.md
 ├── CLAUDE.md
 ├── .gitignore
+├── Shakespeare_Text_Generator_Guide.docx   # Professor user guide
+├── scripts/
+│   └── generate_guide.py                  # Regenerates the .docx guide
 ├── notebooks/
 │   └── Dhruvkumar_Patel_Assignment_4.ipynb   # Training reference (Assignment 4)
 └── shakespeare-api/
     ├── app/
     │   ├── main.py       # FastAPI factory, lifespan, CORS
-    │   ├── routes.py     # GET /, GET /health, POST /generate
+    │   ├── routes.py     # GET /, GET /health, GET /ui, POST /generate
     │   ├── schemas.py    # Pydantic request / response models
     │   ├── model.py      # TransformerModel, Vocab, generate()
     │   └── state.py      # Loaded model + vocab singleton
@@ -52,7 +58,7 @@ train the model and save the artifacts:
 cd shakespeare-api
 python3 -m venv .venv
 source .venv/bin/activate
-pip install torch requests       # minimal deps for training
+pip install torch requests
 python scripts/export_artifacts.py
 ```
 
@@ -71,13 +77,16 @@ and writes three files to `artifacts/`:
 
 ```bash
 cd shakespeare-api
-source .venv/bin/activate        # if not already active
+source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8080
 ```
 
-The server starts at **http://localhost:8080**.
-Interactive API docs: **http://localhost:8080/docs**
+| URL | Description |
+|---|---|
+| http://localhost:8080/ui | Web UI |
+| http://localhost:8080/docs | Interactive API docs |
+| http://localhost:8080/health | Health check |
 
 You should see this in the terminal on successful startup:
 
@@ -97,11 +106,6 @@ curl http://localhost:8080/health
 ```
 ```json
 {"status": "healthy"}
-```
-
-**Service info**
-```bash
-curl http://localhost:8080/
 ```
 
 **Generate — balanced** `(temperature=0.8, top_k=10)` — recommended default
@@ -129,7 +133,7 @@ curl -X POST http://localhost:8080/generate \
 ```json
 {
   "prompt": "to be or not to be",
-  "generated_text": "to be or not to be the king richard iii : and that is it ...",
+  "generated_text": "to be or not to be his son , sir , but i will not : and i have a fool ...",
   "parameters": {
     "max_tokens": 50,
     "temperature": 0.8,
@@ -148,7 +152,7 @@ curl -X POST http://localhost:8080/generate \
 ```bash
 gcloud auth login
 gcloud config set project YOUR_PROJECT_ID
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
 ```
 
 ### Deploy
@@ -171,7 +175,7 @@ the command completes.
 ### Test the live service
 
 ```bash
-export BASE_URL="https://YOUR-CLOUD-RUN-URL"
+export BASE_URL="https://shakespeare-api-925816807412.us-central1.run.app"
 
 curl $BASE_URL/health
 
@@ -188,6 +192,19 @@ gcloud run logs read shakespeare-api --region us-central1
 
 ---
 
+## Web UI
+
+The service includes a built-in web interface at `/ui`. No separate deployment needed.
+
+**Features:**
+- Prompt input textarea
+- One-click mode presets: Greedy / Balanced / Creative
+- Manual controls for Max Tokens, Temperature, and Top-K
+- Output highlights the original prompt in orange and generated text in white
+- Token count and parameters shown below each result
+
+---
+
 ## API reference
 
 ### `GET /`
@@ -196,13 +213,16 @@ Returns service metadata and status.
 ### `GET /health`
 Returns `{"status": "healthy"}`. Used by Cloud Run for health checks.
 
+### `GET /ui`
+Serves the web interface.
+
 ### `POST /generate`
 
 **Request body**
 
 | Field | Type | Default | Range | Description |
 |---|---|---|---|---|
-| `prompt` | string | required | ≥ 1 char | Seed text for generation |
+| `prompt` | string | required | >= 1 char | Seed text for generation |
 | `max_tokens` | int | `50` | 1 – 200 | Number of tokens to generate |
 | `temperature` | float | `0.8` | 0.1 – 2.0 | Lower = conservative, higher = creative |
 | `top_k` | int | `10` | 0 – 50 | Candidate pool size (`0` = greedy) |
@@ -223,5 +243,5 @@ Returns `{"status": "healthy"}`. Used by Cloud Run for health checks.
 - **Cold start** — Cloud Run scales to zero when idle. The first request after inactivity
   takes ~5–10 seconds while the model loads (~22 MB weights + PyTorch init).
 - **Memory** — 1Gi is the minimum; PyTorch + model weights use ~500 MB at runtime.
-- **Greedy repetition** — Greedy decoding is known to produce loops ("and i have heard...
-  and i have heard..."). Use balanced or creative mode for better-looking output.
+- **Greedy repetition** — Greedy decoding is known to produce loops. Use balanced or
+  creative mode for better-looking output.
